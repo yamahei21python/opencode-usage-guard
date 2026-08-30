@@ -94,6 +94,23 @@ function messageInfo(event: unknown): MessageInfo | undefined {
   return event.properties.info as MessageInfo;
 }
 
+// 利用可能な代替モデル（OpenAI 無料枠外）
+const FALLBACK_MODELS = [
+  "opencode/big-pickle",
+  "sakura/gpt-oss-120b",
+  "crofai/glm-5.1",
+  "qwen3.6:35b",
+  "qwen2.5-coder:14b",
+];
+
+function suggestFallback(blockedModel: string): string {
+  const group = classify(blockedModel);
+  const suggestions = FALLBACK_MODELS.join(", ");
+  return group === "sol"
+    ? `  代替 (sol): ${suggestions}`
+    : `  代替 (terra): ${suggestions}`;
+}
+
 async function checkLimit(model: string): Promise<{ allowed: boolean; message: string }> {
   const group = classify(model);
   if (!group) return { allowed: true, message: "" };
@@ -111,6 +128,7 @@ async function checkLimit(model: string): Promise<{ allowed: boolean; message: s
         `[USAGE GUARD] ${model} をブロック（課金回避）`,
         `  OpenAI Usage API 取得不可（ネットワーク/キー要確認）`,
         `  ローカル計測: ${current.toLocaleString()} / ${limit.toLocaleString()} tokens (${percentage}%)`,
+        suggestFallback(model),
       ].join("\n"),
     };
   }
@@ -122,7 +140,7 @@ async function checkLimit(model: string): Promise<{ allowed: boolean; message: s
         `[USAGE GUARD] ${model} がガード閾値 ${limit.toLocaleString()} tokens に到達`,
         `  現在: ${current.toLocaleString()} / ${limit.toLocaleString()} tokens (${percentage}%)`,
         `  リセット: 毎日 09:00 JST`,
-        `  対応: 別モデル切替 or 明日まで待機`,
+        suggestFallback(model),
       ].join("\n"),
     };
   }
@@ -227,12 +245,14 @@ export default async () => ({
 
     const usage = await getEffectiveUsage();
     if (usage.apiUnavailable) {
-      throw new Error(`[USAGE GUARD] task(${sub}) ブロック: OpenAI Usage API 取得不可（課金回避）`);
+      throw new Error(
+        `[USAGE GUARD] task(${sub}) ブロック: OpenAI Usage API 取得不可（課金回避）\n${suggestFallback(sub)}`
+      );
     }
     const current = group === "sol" ? usage.sol_tokens : usage.terra_tokens;
     if (current >= limitFor(group)) {
       throw new Error(
-        `[USAGE GUARD] task(${sub}) ブロック: ${group} ${current.toLocaleString()} / ${limitFor(group).toLocaleString()} (課金回避)`
+        `[USAGE GUARD] task(${sub}) ブロック: ${group} ${current.toLocaleString()} / ${limitFor(group).toLocaleString()} (課金回避)\n${suggestFallback(sub)}`
       );
     }
   },
