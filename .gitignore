@@ -1,0 +1,20 @@
+# Secrets
+.env
+*.key
+*.pem
+
+# Usage data (per-user)
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+today_usage.json
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
