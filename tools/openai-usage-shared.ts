@@ -14,6 +14,7 @@ type SqliteDatabase = {
 };
 
 type UsageTotals = { sol: number; terra: number };
+export type SessionRow = { session_id: string; model: string; sol: number; terra: number; updated_at: number };
 
 let databasePromise: Promise<SqliteDatabase | null> | null = null;
 
@@ -29,6 +30,18 @@ async function getDatabase(): Promise<SqliteDatabase | null> {
       database.run("PRAGMA synchronous = NORMAL");
       database.run(
         "CREATE TABLE IF NOT EXISTS usage (date TEXT PRIMARY KEY, sol INTEGER NOT NULL DEFAULT 0, terra INTEGER NOT NULL DEFAULT 0)"
+      );
+      // 会話（セッション）別追跡テーブル
+      database.run(
+        `CREATE TABLE IF NOT EXISTS sessions (
+          date TEXT NOT NULL,
+          session_id TEXT NOT NULL,
+          model TEXT NOT NULL DEFAULT '',
+          sol INTEGER NOT NULL DEFAULT 0,
+          terra INTEGER NOT NULL DEFAULT 0,
+          updated_at INTEGER NOT NULL DEFAULT 0,
+          PRIMARY KEY (date, session_id)
+        )`
       );
       return database;
     } catch (error) {
@@ -152,6 +165,53 @@ export async function addUsage(
   else u.terra_tokens += increment;
   await saveUsage(u);
   return { sol: u.sol_tokens, terra: u.terra_tokens };
+}
+
+// ── セッション別記録 ──
+export async function recordSessionUsage(
+  group: "sol" | "terra",
+  model: string,
+  amount: number,
+  sessionId: string
+): Promise<void> {
+  const date = todayStr();
+  const increment = finiteTokenCount(amount);
+  if (increment <= 0 || !sessionId) return;
+  const d = await getDatabase();
+  if (!d) return;
+  const col = group === "sol" ? "sol" : "terra";
+  try {
+    // UPSERT: 存在すれば加算、無ければ新規挿入
+    d.run(
+      `INSERT INTO sessions (date, session_id, model, sol, terra, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(date, session_id) DO UPDATE SET
+         model = excluded.model,
+         sol = sessions.sol + excluded.sol,
+         terra = sessions.terra + excluded.terra,
+         updated_at = excluded.updated_at`,
+      [date, sessionId, model, group === "sol" ? increment : 0, group === "terra" ? increment : 0, Date.now()]
+    );
+  } catch (error) {
+    console.error("[Usage Guard] session record failed:", error);
+  }
+}
+
+/** 今日のセッション別内訳（降順） */
+export async function getSessionBreakdown(): Promise<SessionRow[]> {
+  const date = todayStr();
+  const d = await getDatabase();
+  if (!d) return [];
+  try {
+    const rows = d
+      .query<SessionRow>(
+        "SELECT session_id, model, sol, terra, updated_at FROM sessions WHERE date = ? ORDER BY (sol + terra) DESC LIMIT 30"
+      )
+      .all(date);
+    return rows;
+  } catch {
+    return [];
+  }
 }
 
 function finiteTokenCount(value: unknown): number {

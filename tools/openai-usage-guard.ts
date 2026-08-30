@@ -1,7 +1,7 @@
 import fs from "fs";
 import os from "os";
 import path from "path";
-import { addUsage as addUsageAtomic, classify, getEffectiveUsage, limitFor } from "./openai-usage-shared";
+import { addUsage as addUsageAtomic, classify, getEffectiveUsage, limitFor, recordSessionUsage } from "./openai-usage-shared";
 
 type ModelObject = {
   providerID?: unknown;
@@ -197,6 +197,21 @@ export default async () => ({
       await recordUsage(model, delta);
     } catch (error) {
       console.error("[Usage Guard] usage record failed:", error);
+    }
+
+    // セッション別記録（会話ごとの消費量追跡）
+    try {
+      const props = isRecord(event.properties) ? event.properties : {};
+      const sessionId =
+        asString(props.sessionID) ||
+        asString(props.session_id) ||
+        asString(props.conversationID) ||
+        asString(props.conversation_id) ||
+        asString((props as Record<string, unknown>).session) ||
+        messageId; // フォールバック: message ID を session 代用
+      await recordSessionUsage(classify(model)!, model, delta, sessionId);
+    } catch (error) {
+      console.error("[Usage Guard] session record failed:", error);
     }
   },
 

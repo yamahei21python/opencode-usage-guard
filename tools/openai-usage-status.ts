@@ -1,10 +1,10 @@
 import { tool } from "@opencode-ai/plugin";
-import { getEffectiveUsage, SOL_LIMIT, TERRA_LIMIT } from "./openai-usage-shared";
+import { getEffectiveUsage, getSessionBreakdown, SOL_LIMIT, TERRA_LIMIT } from "./openai-usage-shared";
 
 export default () =>
   tool({
     description:
-      "OpenAI API 無料枠の使用量照会。Sol/Terra/Luna の今日の消費トークン数と残量を返す。",
+      "OpenAI API 無料枠の使用量照会。Sol/Terra/Luna の今日の消費トークン数と残量、セッション別内訳を返す。",
     args: {},
     async execute() {
       const usage = await getEffectiveUsage();
@@ -31,6 +31,21 @@ export default () =>
         lines.push(`⚠ Sol: 60%超過 - 残量少`);
       if (usage.terra_tokens >= TERRA_LIMIT * 0.6)
         lines.push(`⚠ Terra/Luna: 60%超過 - 残量少`);
+
+      // セッション別内訳
+      const sessions = await getSessionBreakdown();
+      if (sessions.length > 0) {
+        lines.push(``, `── セッション別内訳 ──`);
+        for (const s of sessions.slice(0, 10)) {
+          const total = s.sol + s.terra;
+          const group = s.terra > 0 ? "terra" : "sol";
+          const pct = percentage(total, group === "sol" ? SOL_LIMIT : TERRA_LIMIT);
+          const shortId = s.session_id.length > 12 ? s.session_id.slice(0, 12) + "…" : s.session_id;
+          lines.push(
+            `  ${shortId} [${s.model}] ${group}: ${total.toLocaleString()} tokens (${pct}%)`
+          );
+        }
+      }
 
       return lines.join("\n");
     },
