@@ -31,18 +31,22 @@ async function getDatabase(): Promise<SqliteDatabase | null> {
       database.run(
         "CREATE TABLE IF NOT EXISTS usage (date TEXT PRIMARY KEY, sol INTEGER NOT NULL DEFAULT 0, terra INTEGER NOT NULL DEFAULT 0)"
       );
-      // 会話（セッション）別追跡テーブル
-      database.run(
-        `CREATE TABLE IF NOT EXISTS sessions (
-          date TEXT NOT NULL,
-          session_id TEXT NOT NULL,
-          model TEXT NOT NULL DEFAULT '',
-          sol INTEGER NOT NULL DEFAULT 0,
-          terra INTEGER NOT NULL DEFAULT 0,
-          updated_at INTEGER NOT NULL DEFAULT 0,
-          PRIMARY KEY (date, session_id)
-        )`
-      );
+      // 会話（セッション）別追跡テーブル（マイグレーション対応）
+      try {
+        database.run(
+          `CREATE TABLE IF NOT EXISTS sessions (
+            date TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            model TEXT NOT NULL DEFAULT '',
+            sol INTEGER NOT NULL DEFAULT 0,
+            terra INTEGER NOT NULL DEFAULT 0,
+            updated_at INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (date, session_id)
+          )`
+        );
+      } catch {
+        // 無視（既に存在する場合）
+      }
       return database;
     } catch (error) {
       console.error("[Usage Guard] SQLite init failed, fallback JSON:", error);
